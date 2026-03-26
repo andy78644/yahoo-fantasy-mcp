@@ -2,6 +2,7 @@
 """Yahoo Fantasy Sports MCP Server — MLB & NBA start/sit and roster analysis"""
 import asyncio
 import json
+from datetime import date
 
 import mcp.types as types
 from mcp.server import Server
@@ -54,16 +55,20 @@ TOOLS = [
     ),
     types.Tool(
         name="get_player_stats",
-        description="Get player stats for a specific period. Use to compare players for start/sit decisions.",
+        description="Get player stats for a specific period or date. Use 'date' with a YYYY-MM-DD date for single-game stats.",
         inputSchema={
             "type": "object",
             "properties": {
                 "player_key": {"type": "string"},
                 "stat_period": {
                     "type": "string",
-                    "enum": ["season", "lastweek", "last14", "last30"],
+                    "enum": ["season", "lastweek", "last14", "last30", "date"],
                     "default": "last14",
-                    "description": "last14 is best for recent form analysis",
+                    "description": "Use 'date' for a specific day's stats (requires date param)",
+                },
+                "date": {
+                    "type": "string",
+                    "description": "YYYY-MM-DD, used when stat_period is 'date'. Defaults to today.",
                 },
             },
             "required": ["player_key"],
@@ -129,7 +134,11 @@ def _dispatch(name: str, args: dict) -> list[types.TextContent]:
 
     if name == "get_player_stats":
         period = args.get("stat_period", "last14")
-        data = yahoo.get(f"/player/{args['player_key']}/stats;type={period}")
+        if period == "date":
+            d = args.get("date") or date.today().isoformat()
+            data = yahoo.get(f"/player/{args['player_key']}/stats;type=date;date={d}")
+        else:
+            data = yahoo.get(f"/player/{args['player_key']}/stats;type={period}")
         return _text(json.dumps(parse_player_stats(data), indent=2))
 
     if name == "search_players":
