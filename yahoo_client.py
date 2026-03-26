@@ -19,6 +19,7 @@ class YahooFantasyClient:
     def __init__(self):
         self.client_id = os.getenv("YAHOO_CLIENT_ID", "")
         self.client_secret = os.getenv("YAHOO_CLIENT_SECRET", "")
+        self.auth_server = os.getenv("YAHOO_AUTH_SERVER", "").rstrip("/")
         self.tokens: dict = self._load_tokens()
 
     def _load_tokens(self) -> dict:
@@ -35,12 +36,32 @@ class YahooFantasyClient:
         return bool(self.tokens.get("access_token"))
 
     def authenticate(self, code: str | None = None) -> str:
-        """Two-step OAuth flow.
-        Step 1: call with no args — opens browser for Yahoo authorization.
-        Step 2: call with code= from the redirect URL query string.
-        """
+        if self.auth_server:
+            return self._authenticate_via_relay(code)
+        return self._authenticate_direct(code)
+
+    def _authenticate_via_relay(self, code: str | None) -> str:
+        if code is None:
+            resp = httpx.get(f"{self.auth_server}/auth/url", timeout=10)
+            resp.raise_for_status()
+            auth_url = resp.json()["url"]
+            webbrowser.open(auth_url)
+            return (
+                "Browser opened. After clicking Allow on the Yahoo authorization page, "
+                "a code will be displayed directly on the page.\n"
+                "Copy that code and call authenticate again with it."
+            )
+
+        resp = httpx.post(f"{self.auth_server}/auth/exchange", json={"code": code}, timeout=10)
+        resp.raise_for_status()
+        tokens = resp.json()
+        tokens["expires_at"] = time.time() + tokens.get("expires_in", 3600)
+        self._save_tokens(tokens)
+        return f"Authenticated via relay! Token valid for {tokens.get('expires_in', 3600) // 60} minutes."
+
+    def _authenticate_direct(self, code: str | None) -> str:
         if not self.client_id:
-            raise ValueError("YAHOO_CLIENT_ID environment variable not set")
+            raise ValueError("Set YAHOO_CLIENT_ID and YAHOO_CLIENT_SECRET, or YAHOO_AUTH_SERVER.")
 
         if code is None:
             auth_url = f"{AUTH_URL}?{urlencode({
@@ -73,13 +94,22 @@ class YahooFantasyClient:
             raise RuntimeError("No valid token found. Ask Claude to authenticate with Yahoo Fantasy first.")
         if time.time() < self.tokens.get("expires_at", 0) - 60:
             return
-        response = httpx.post(
-            TOKEN_URL,
-            auth=(self.client_id, self.client_secret),
-            data={"grant_type": "refresh_token", "refresh_token": self.tokens["refresh_token"]},
-        )
-        response.raise_for_status()
-        tokens = response.json()
+        if self.auth_server:
+            resp = httpx.post(
+                f"{self.auth_server}/auth/refresh",
+                json={"refresh_token": self.tokens["refresh_token"]},
+                timeout=10,
+            )
+            resp.raise_for_status()
+            tokens = resp.json()
+        else:
+            resp = httpx.post(
+                TOKEN_URL,
+                auth=(self.client_id, self.client_secret),
+                data={"grant_type": "refresh_token", "refresh_token": self.tokens["refresh_token"]},
+            )
+            resp.raise_for_status()
+            tokens = resp.json()
         tokens["expires_at"] = time.time() + tokens.get("expires_in", 3600)
         self._save_tokens(tokens)
 
