@@ -2,25 +2,9 @@
 
 A Model Context Protocol (MCP) server for Yahoo Fantasy Baseball and Basketball. Lets Claude analyze your roster, check matchups, browse free agents, and more.
 
-## Prerequisites
-
-- Python 3.11+
-- A Yahoo Developer App with `fspt-r` scope
-
 ## Setup
 
-### 1. Create a Yahoo Developer App
-
-1. Go to [Yahoo Developer Network](https://developer.yahoo.com/apps/)
-2. Click **Create an App**
-3. Fill in the details:
-   - **Application Name**: anything you like
-   - **Application Type**: Installed Application (Client)
-   - **Callback Domain**: any valid HTTPS domain (e.g. `yahoo.com`) — not used in this flow
-   - **API Permissions**: Fantasy Sports → **Read**
-4. Note your **Client ID** and **Client Secret**
-
-### 2. Install dependencies
+### 1. Install dependencies
 
 ```bash
 python -m venv venv
@@ -28,9 +12,15 @@ source venv/bin/activate  # Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-### 3. Configure Claude Desktop / Claude Code
+### 2. Configure Claude Desktop / Claude Code
 
-Add to your Claude config:
+There are two ways to authenticate — pick one:
+
+---
+
+#### Option A: Use a relay server (recommended, no Yahoo app needed)
+
+Point the MCP at a relay server that handles credentials for you:
 
 **Claude Desktop** (`~/Library/Application Support/Claude/claude_desktop_config.json`):
 ```json
@@ -40,8 +30,7 @@ Add to your Claude config:
       "command": "/path/to/yahoo-fantasy-mcp/venv/bin/python3",
       "args": ["/path/to/yahoo-fantasy-mcp/server.py"],
       "env": {
-        "YAHOO_CLIENT_ID": "your_client_id_here",
-        "YAHOO_CLIENT_SECRET": "your_client_secret_here"
+        "YAHOO_AUTH_SERVER": "https://your-relay-url.com"
       }
     }
   }
@@ -57,6 +46,30 @@ Add to your Claude config:
       "command": "/path/to/yahoo-fantasy-mcp/venv/bin/python3",
       "args": ["/path/to/yahoo-fantasy-mcp/server.py"],
       "env": {
+        "YAHOO_AUTH_SERVER": "https://your-relay-url.com"
+      }
+    }
+  }
+}
+```
+
+> Want to self-host your own relay? See [`relay/README.md`](relay/README.md).
+
+---
+
+#### Option B: Use your own Yahoo Developer App
+
+1. Go to [Yahoo Developer Network](https://developer.yahoo.com/apps/) and create an app
+2. Set **Application Type** to Installed Application, **API Permissions** to Fantasy Sports → Read
+3. Note your **Client ID** and **Client Secret**
+
+```json
+{
+  "mcpServers": {
+    "yahoo-fantasy": {
+      "command": "/path/to/yahoo-fantasy-mcp/venv/bin/python3",
+      "args": ["/path/to/yahoo-fantasy-mcp/server.py"],
+      "env": {
         "YAHOO_CLIENT_ID": "your_client_id_here",
         "YAHOO_CLIENT_SECRET": "your_client_secret_here"
       }
@@ -65,16 +78,16 @@ Add to your Claude config:
 }
 ```
 
-### 4. First-time authentication
+---
+
+### 3. First-time authentication
 
 On first use, just ask Claude anything about your fantasy team. If not authenticated, Claude will automatically start the OAuth flow:
 
 1. A browser window opens to Yahoo's authorization page
 2. Click **Allow**
 3. Yahoo displays a code on the page — copy it and give it to Claude
-4. Done. The token is saved and auto-refreshed from now on.
-
-You only need to do this once (or when the refresh token expires after ~1 year).
+4. Done. The token is saved and auto-refreshed from now on (~1 year before re-auth needed)
 
 ## Available Tools
 
