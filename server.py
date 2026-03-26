@@ -62,9 +62,9 @@ TOOLS = [
                 "player_key": {"type": "string"},
                 "stat_period": {
                     "type": "string",
-                    "enum": ["season", "lastweek", "last14", "last30", "date"],
+                    "enum": ["season", "week", "lastweek", "last14", "last30", "date"],
                     "default": "last14",
-                    "description": "Use 'date' for a specific day's stats (requires date param)",
+                    "description": "Use 'week' for current week, 'date' for a specific day (requires date param)",
                 },
                 "date": {
                     "type": "string",
@@ -137,6 +137,11 @@ def _dispatch(name: str, args: dict) -> list[types.TextContent]:
         if period == "date":
             d = args.get("date") or date.today().isoformat()
             data = yahoo.get(f"/player/{args['player_key']}/stats;type=date;date={d}")
+        elif period == "week":
+            game_key = args["player_key"].split(".")[0]
+            game_data = yahoo.get(f"/game/{game_key}")
+            current_week = game_data.get("fantasy_content", {}).get("game", [{}, {}])[0].get("current_week", 1)
+            data = yahoo.get(f"/player/{args['player_key']}/stats;type=week;week={current_week}")
         else:
             data = yahoo.get(f"/player/{args['player_key']}/stats;type={period}")
         return _text(json.dumps(parse_player_stats(data), indent=2))
