@@ -153,6 +153,10 @@ def parse_player_stats(data: dict) -> dict:
     info = _extract_info(player_parts[0]) if player_parts else {}
     player_stats = player_parts[1].get("player_stats", {}) if len(player_parts) > 1 else {}
 
+    # coverage_type is nested under player_stats["0"]
+    coverage_info = player_stats.get("0", {})
+    coverage_type = coverage_info.get("coverage_type")
+
     # Pick stat name mapping based on player key prefix (game id)
     player_key = info.get("player_key", "")
     stat_map = NBA_STAT_NAMES if player_key.startswith("41") else MLB_STAT_NAMES
@@ -162,7 +166,7 @@ def parse_player_stats(data: dict) -> dict:
         if isinstance(s, dict) and "stat" in s:
             sid = str(s["stat"]["stat_id"])
             val = s["stat"]["value"]
-            if val != "-":
+            if val not in ("-", False, None):
                 label = stat_map.get(sid, f"stat_{sid}")
                 named_stats[label] = val
 
@@ -172,7 +176,7 @@ def parse_player_stats(data: dict) -> dict:
         "team": info.get("editorial_team_full_name", ""),
         "status": info.get("status", "Active"),
         "injury_note": info.get("injury_note", ""),
-        "coverage_type": player_stats.get("coverage_type"),
+        "coverage_type": coverage_type,
         "stats": named_stats,
     }
 
