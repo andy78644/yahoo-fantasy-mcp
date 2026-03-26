@@ -7,7 +7,7 @@ import mcp.types as types
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
 
-from parsers import parse_free_agents, parse_leagues, parse_matchup, parse_player_stats, parse_roster
+from parsers import parse_free_agents, parse_leagues, parse_matchup, parse_player_stats, parse_roster, parse_player_search
 from yahoo_client import YahooFantasyClient
 
 app = Server("yahoo-fantasy")
@@ -69,6 +69,18 @@ TOOLS = [
             "required": ["player_key"],
         },
     ),
+    types.Tool(
+        name="search_players",
+        description="Search for any player by name across the league. Use this to find a player's key before calling get_player_stats.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "league_key": {"type": "string"},
+                "name": {"type": "string", "description": "Player name to search, e.g. 'Aaron Judge'"},
+            },
+            "required": ["league_key", "name"],
+        },
+    ),
     # set_lineup and make_transaction require fspt-w OAuth scope (currently read-only)
     # types.Tool(name="set_lineup", ...),
     # types.Tool(name="make_transaction", ...),
@@ -119,6 +131,10 @@ def _dispatch(name: str, args: dict) -> list[types.TextContent]:
         period = args.get("stat_period", "last14")
         data = yahoo.get(f"/player/{args['player_key']}/stats;type={period}")
         return _text(json.dumps(parse_player_stats(data), indent=2))
+
+    if name == "search_players":
+        data = yahoo.get(f"/league/{args['league_key']}/players;search={args['name']}")
+        return _text(json.dumps(parse_player_search(data), indent=2))
 
     return _text(f"Unknown tool: {name}")
 

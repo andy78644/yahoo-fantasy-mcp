@@ -78,6 +78,26 @@ def parse_roster(data: dict) -> list[dict]:
     return players
 
 
+def parse_player_search(data: dict) -> list[dict]:
+    """Parse /league/{key}/players;search={name}"""
+    league_data = data.get("fantasy_content", {}).get("league", [{}, {}])
+    players_data = league_data[1].get("players", {}) if len(league_data) > 1 else {}
+
+    players = []
+    for i in range(players_data.get("count", 0)):
+        player_parts = players_data.get(str(i), {}).get("player", [[], {}])
+        info = _extract_info(player_parts[0]) if player_parts else {}
+        players.append({
+            "name": info.get("name", {}).get("full", "Unknown"),
+            "player_key": info.get("player_key"),
+            "positions": [p.get("position") for p in info.get("eligible_positions", []) if isinstance(p, dict)],
+            "status": info.get("status", "Active"),
+            "injury_note": info.get("injury_note", ""),
+            "team": info.get("editorial_team_abbr", ""),
+        })
+    return players
+
+
 def parse_free_agents(data: dict) -> list[dict]:
     """Parse /league/{key}/players;status=FA"""
     league_data = data.get("fantasy_content", {}).get("league", [{}, {}])
