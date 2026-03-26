@@ -70,7 +70,7 @@ class YahooFantasyClient:
 
     def _refresh_if_needed(self) -> None:
         if not self.tokens.get("access_token"):
-            raise RuntimeError("Not authenticated. Call the authenticate tool first.")
+            raise RuntimeError("No valid token found. Ask Claude to authenticate with Yahoo Fantasy first.")
         if time.time() < self.tokens.get("expires_at", 0) - 60:
             return
         response = httpx.post(
