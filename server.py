@@ -32,8 +32,15 @@ TOOLS = [
     ),
     types.Tool(
         name="get_roster",
-        description="Get your current roster with positions, status, and injury notes.",
-        inputSchema={"type": "object", "properties": {"team_key": {"type": "string", "description": "Your team key from get_leagues"}}, "required": ["team_key"]},
+        description="Get your roster with positions, status, and injury notes. Pass a date to see that day's lineup (who is active vs benched). Defaults to today.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "team_key": {"type": "string", "description": "Your team key from get_leagues"},
+                "date": {"type": "string", "description": "YYYY-MM-DD date to get roster for that specific day. Defaults to today."},
+            },
+            "required": ["team_key"],
+        },
     ),
     types.Tool(
         name="get_matchup",
@@ -118,7 +125,10 @@ def _dispatch(name: str, args: dict) -> list[types.TextContent]:
         return _text(json.dumps(parse_leagues(data), indent=2))
 
     if name == "get_roster":
-        data = yahoo.get(f"/team/{args['team_key']}/roster/players")
+        if d := args.get("date"):
+            data = yahoo.get(f"/team/{args['team_key']}/roster;date={d}/players")
+        else:
+            data = yahoo.get(f"/team/{args['team_key']}/roster/players")
         return _text(json.dumps(parse_roster(data), indent=2))
 
     if name == "get_matchup":

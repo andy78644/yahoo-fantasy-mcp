@@ -64,13 +64,18 @@ def parse_roster(data: dict) -> list[dict]:
         pos_data = player_parts[1] if len(player_parts) > 1 else {}
 
         sel_pos_list = pos_data.get("selected_position", [])
-        selected_pos = sel_pos_list[1].get("position") if len(sel_pos_list) > 1 else None
+        sel_pos_info = sel_pos_list[1] if len(sel_pos_list) > 1 else {}
+        selected_pos = sel_pos_info.get("position")
+        is_flex = sel_pos_info.get("is_flex", 0)
 
         players.append({
             "name": info.get("name", {}).get("full", "Unknown"),
             "player_key": info.get("player_key"),
             "positions": [p.get("position") for p in info.get("eligible_positions", []) if isinstance(p, dict)],
             "selected_position": selected_pos,
+            "is_bench": selected_pos == "BN",
+            "is_injured_reserve": selected_pos in ("IL", "IL+", "NA"),
+            "is_flex": bool(is_flex),
             "status": info.get("status", "Active"),
             "injury_note": info.get("injury_note", ""),
             "team": info.get("editorial_team_abbr", ""),
