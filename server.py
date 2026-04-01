@@ -8,7 +8,7 @@ import mcp.types as types
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
 
-from parsers import parse_free_agents, parse_leagues, parse_matchup, parse_player_stats, parse_roster, parse_player_search
+from parsers import parse_free_agents, parse_leagues, parse_matchup, parse_player_stats, parse_roster, parse_player_search, parse_roster_stats
 from yahoo_client import YahooFantasyClient
 
 app = Server("yahoo-fantasy")
@@ -49,15 +49,33 @@ TOOLS = [
     ),
     types.Tool(
         name="get_free_agents",
-        description="Get top available free agents. Use for waiver wire and add/drop decisions.",
+        description="Get top available free agents. Use for waiver wire and add/drop decisions. Pass include_stats=true to include season stats in one call (saves individual get_player_stats calls).",
         inputSchema={
             "type": "object",
             "properties": {
                 "league_key": {"type": "string"},
                 "position": {"type": "string", "description": "MLB: SP/RP/C/1B/2B/3B/SS/OF  NBA: PG/SG/SF/PF/C"},
                 "count": {"type": "integer", "default": 25, "description": "Max players to return"},
+                "include_stats": {"type": "boolean", "default": False, "description": "Include season stats in the response. Avoids separate get_player_stats calls."},
             },
             "required": ["league_key"],
+        },
+    ),
+    types.Tool(
+        name="get_roster_stats",
+        description="Get all rostered players with stats for a given period in ONE call. Use instead of calling get_player_stats for each player individually. Returns name, position, status, and stats for everyone on the roster.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "team_key": {"type": "string"},
+                "stat_period": {
+                    "type": "string",
+                    "enum": ["season", "lastweek", "last30"],
+                    "default": "lastweek",
+                    "description": "Stats period for all players. Note: last14 is not supported by this batch endpoint.",
+                },
+            },
+            "required": ["team_key"],
         },
     ),
     types.Tool(
@@ -93,9 +111,6 @@ TOOLS = [
             "required": ["league_key", "name"],
         },
     ),
-    # set_lineup and make_transaction require fspt-w OAuth scope (currently read-only)
-    # types.Tool(name="set_lineup", ...),
-    # types.Tool(name="make_transaction", ...),
 ]
 
 
@@ -139,8 +154,15 @@ def _dispatch(name: str, args: dict) -> list[types.TextContent]:
         path = f"/league/{args['league_key']}/players;status=FA;sort=AR;count={args.get('count', 25)}"
         if pos := args.get("position"):
             path += f";position={pos}"
+        if args.get("include_stats"):
+            path += ";out=stats"
         data = yahoo.get(path)
-        return _text(json.dumps(parse_free_agents(data), indent=2))
+        return _text(json.dumps(parse_free_agents(data, include_stats=args.get("include_stats", False)), indent=2))
+
+    if name == "get_roster_stats":
+        period = args.get("stat_period", "last14")
+        data = yahoo.get(f"/team/{args['team_key']}/roster/players/stats;type={period}")
+        return _text(json.dumps(parse_roster_stats(data), indent=2))
 
     if name == "get_player_stats":
         period = args.get("stat_period", "last14")

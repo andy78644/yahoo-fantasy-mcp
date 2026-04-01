@@ -103,7 +103,74 @@ def parse_player_search(data: dict) -> list[dict]:
     return players
 
 
-def parse_free_agents(data: dict) -> list[dict]:
+def _is_nba_player(info: dict, player_stats: dict | None = None) -> bool:
+    """Detect NBA vs MLB.
+    Primary: basketball-only positions (PG/SG/SF/PF).
+    Fallback for C/Util-only players: check for stat_id 9004003 (FGM/FGA, NBA-exclusive).
+    """
+    positions = {p.get("position") for p in info.get("eligible_positions", []) if isinstance(p, dict)}
+    if positions & {"PG", "SG", "SF", "PF"}:
+        return True
+    if player_stats:
+        stat_ids = {str(s["stat"]["stat_id"]) for s in player_stats.get("stats", []) if isinstance(s, dict) and "stat" in s}
+        if "9004003" in stat_ids:
+            return True
+    return False
+
+
+def _stat_map_for(info: dict, player_stats: dict | None = None) -> dict:
+    return NBA_STAT_NAMES if _is_nba_player(info, player_stats) else MLB_STAT_NAMES
+
+
+def _parse_stats_block(player_stats: dict, stat_map: dict) -> dict:
+    """Extract named stats from a player_stats block."""
+    named_stats = {}
+    for s in player_stats.get("stats", []):
+        if isinstance(s, dict) and "stat" in s:
+            sid = str(s["stat"]["stat_id"])
+            val = s["stat"]["value"]
+            if val not in ("-", False, None):
+                label = stat_map.get(sid, f"stat_{sid}")
+                named_stats[label] = val
+    return named_stats
+
+
+def parse_roster_stats(data: dict) -> list[dict]:
+    """Parse /team/{key}/roster/players/stats;type={period} — all players with stats in one call."""
+    team_data = data.get("fantasy_content", {}).get("team", [{}, {}])
+    roster_root = team_data[1].get("roster", {}) if len(team_data) > 1 else {}
+    players_data = roster_root.get("0", {}).get("players", {})
+
+    players = []
+    for i in range(players_data.get("count", 0)):
+        player_parts = players_data.get(str(i), {}).get("player", [[], {}])
+        info = _extract_info(player_parts[0]) if player_parts else {}
+
+        sel_pos_list = player_parts[1].get("selected_position", []) if len(player_parts) > 1 and isinstance(player_parts[1], dict) else []
+        sel_pos_info = sel_pos_list[1] if len(sel_pos_list) > 1 else {}
+        selected_pos = sel_pos_info.get("position")
+
+        player_stats = player_parts[3].get("player_stats", {}) if len(player_parts) > 3 and isinstance(player_parts[3], dict) else {}
+        coverage_type = player_stats.get("0", {}).get("coverage_type")
+
+        player_key = info.get("player_key", "")
+        players.append({
+            "name": info.get("name", {}).get("full", "Unknown"),
+            "player_key": player_key,
+            "team": info.get("editorial_team_abbr", ""),
+            "positions": [p.get("position") for p in info.get("eligible_positions", []) if isinstance(p, dict)],
+            "selected_position": selected_pos,
+            "is_bench": selected_pos == "BN",
+            "is_injured_reserve": selected_pos in ("IL", "IL+", "NA"),
+            "status": info.get("status", "Active"),
+            "injury_note": info.get("injury_note", ""),
+            "coverage_type": coverage_type,
+            "stats": _parse_stats_block(player_stats, _stat_map_for(info, player_stats)),
+        })
+    return players
+
+
+def parse_free_agents(data: dict, include_stats: bool = False) -> list[dict]:
     """Parse /league/{key}/players;status=FA"""
     league_data = data.get("fantasy_content", {}).get("league", [{}, {}])
     players_data = league_data[1].get("players", {}) if len(league_data) > 1 else {}
@@ -113,15 +180,23 @@ def parse_free_agents(data: dict) -> list[dict]:
         player_parts = players_data.get(str(i), {}).get("player", [[], {}])
         info = _extract_info(player_parts[0]) if player_parts else {}
 
-        players.append({
+        player_key = info.get("player_key", "")
+        entry = {
             "name": info.get("name", {}).get("full", "Unknown"),
-            "player_key": info.get("player_key"),
+            "player_key": player_key,
             "positions": [p.get("position") for p in info.get("eligible_positions", []) if isinstance(p, dict)],
             "status": info.get("status", "Active"),
             "injury_note": info.get("injury_note", ""),
             "team": info.get("editorial_team_abbr", ""),
             "percent_owned": _safe_percent_owned(info),
-        })
+        }
+
+        if include_stats and len(player_parts) > 1 and isinstance(player_parts[1], dict):
+            player_stats = player_parts[1].get("player_stats", {})
+            entry["coverage_type"] = player_stats.get("0", {}).get("coverage_type")
+            entry["stats"] = _parse_stats_block(player_stats, _stat_map_for(info, player_stats))
+
+        players.append(entry)
     return players
 
 
@@ -162,19 +237,7 @@ def parse_player_stats(data: dict) -> dict:
     coverage_info = player_stats.get("0", {})
     coverage_type = coverage_info.get("coverage_type")
 
-    # Pick stat name mapping based on player key prefix (game id)
     player_key = info.get("player_key", "")
-    stat_map = NBA_STAT_NAMES if player_key.startswith("41") else MLB_STAT_NAMES
-
-    named_stats = {}
-    for s in player_stats.get("stats", []):
-        if isinstance(s, dict) and "stat" in s:
-            sid = str(s["stat"]["stat_id"])
-            val = s["stat"]["value"]
-            if val not in ("-", False, None):
-                label = stat_map.get(sid, f"stat_{sid}")
-                named_stats[label] = val
-
     return {
         "name": info.get("name", {}).get("full", "Unknown"),
         "player_key": player_key,
@@ -182,7 +245,7 @@ def parse_player_stats(data: dict) -> dict:
         "status": info.get("status", "Active"),
         "injury_note": info.get("injury_note", ""),
         "coverage_type": coverage_type,
-        "stats": named_stats,
+        "stats": _parse_stats_block(player_stats, _stat_map_for(info, player_stats)),
     }
 
 
