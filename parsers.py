@@ -129,7 +129,7 @@ def _parse_stats_block(player_stats: dict, stat_map: dict) -> dict:
         if isinstance(s, dict) and "stat" in s:
             sid = str(s["stat"]["stat_id"])
             val = s["stat"]["value"]
-            if val not in ("-", False, None):
+            if val not in ("-", None) and val is not False:
                 label = stat_map.get(sid, f"stat_{sid}")
                 named_stats[label] = val
     return named_stats
@@ -146,11 +146,18 @@ def parse_roster_stats(data: dict) -> list[dict]:
         player_parts = players_data.get(str(i), {}).get("player", [[], {}])
         info = _extract_info(player_parts[0]) if player_parts else {}
 
-        sel_pos_list = player_parts[1].get("selected_position", []) if len(player_parts) > 1 and isinstance(player_parts[1], dict) else []
+        sel_pos_list = []
+        player_stats = {}
+        for part in player_parts[1:]:
+            if not isinstance(part, dict):
+                continue
+            if "selected_position" in part:
+                sel_pos_list = part["selected_position"]
+            if "player_stats" in part:
+                player_stats = part["player_stats"]
+
         sel_pos_info = sel_pos_list[1] if len(sel_pos_list) > 1 else {}
         selected_pos = sel_pos_info.get("position")
-
-        player_stats = player_parts[3].get("player_stats", {}) if len(player_parts) > 3 and isinstance(player_parts[3], dict) else {}
         coverage_type = player_stats.get("0", {}).get("coverage_type")
 
         player_key = info.get("player_key", "")
@@ -206,17 +213,22 @@ def _safe_percent_owned(info: dict) -> float:
 
 
 MLB_STAT_NAMES = {
-    "0": "GP", "1": "AB", "2": "R", "3": "H", "4": "1B", "5": "2B", "6": "3B",
-    "7": "HR", "8": "RBI", "9": "SB", "10": "CS", "11": "BB", "12": "IBB",
-    "13": "HBP", "14": "SAC", "15": "SF", "16": "GIDP", "17": "SO", "18": "AVG",
-    "19": "OBP", "20": "SLG", "21": "OPS", "22": "PA", "23": "XBH",
-    "26": "NSB", "27": "IP", "28": "GS", "29": "W", "30": "L", "31": "SV",
-    "32": "HLD", "33": "BS", "34": "ERA", "35": "WHIP", "36": "K", "37": "BB_P",
-    "38": "QS", "39": "OUT", "40": "HA", "41": "HRA", "42": "BBA", "43": "ER",
+    # Hitter counting stats
+    "0": "GP", "1": "G", "2": "SO",
+    "6": "AB", "7": "R", "8": "H", "9": "1B", "10": "2B", "11": "3B",
+    "12": "IBB", "13": "HBP", "14": "SAC", "15": "SF", "16": "GIDP",
+    "17": "HR", "18": "BB", "20": "SB", "23": "XBH", "65": "PA",
+    # Hitter rate stats
+    "3": "AVG", "4": "OBP", "5": "SLG", "55": "OPS", "60": "OAV",
+    # Pitcher counting stats
+    "28": "GS", "29": "W", "30": "L", "31": "SV",
+    "32": "HLD", "33": "BS", "34": "HA", "36": "K", "37": "BB_P",
+    "38": "QS", "39": "OUT", "40": "CG", "41": "HRA", "42": "BBA", "43": "ER",
     "44": "NSV", "45": "K/9", "46": "BB/9", "48": "K/BB",
-    "50": "HR/9", "51": "G_P", "55": "W+SV+HLD", "56": "SVHD",
-    "57": "Ks_swinging", "58": "GB%", "59": "FIP",
-    "60": "OAV", "61": "BAA", "62": "SV+HLD",
+    "51": "G_P", "56": "SVHD", "57": "Ks_swinging", "58": "GB%", "59": "FIP",
+    # Pitcher rate stats
+    "26": "ERA", "27": "WHIP", "50": "IP",
+    "61": "BAA", "62": "SV+HLD",
 }
 
 NBA_STAT_NAMES = {
@@ -259,7 +271,7 @@ def parse_matchup(data: dict) -> dict:
     for i in range(matchups_container.get("count", 0)):
         m = matchups_container.get(str(i), {}).get("matchup", {})
         status = m.get("status", "")
-        week = m.get("week", 0)
+        week = int(m.get("week", 0))
         if status == "midevent":
             current = m
             break
