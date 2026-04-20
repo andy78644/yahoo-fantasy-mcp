@@ -8,7 +8,18 @@ import mcp.types as types
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
 
-from parsers import parse_free_agents, parse_leagues, parse_matchup, parse_player_stats, parse_roster, parse_player_search, parse_roster_stats
+from parsers import (
+    parse_free_agents,
+    parse_league_scoreboard,
+    parse_league_settings,
+    parse_league_teams,
+    parse_leagues,
+    parse_matchup,
+    parse_player_search,
+    parse_player_stats,
+    parse_roster,
+    parse_roster_stats,
+)
 from yahoo_client import YahooFantasyClient
 
 app = Server("yahoo-fantasy")
@@ -100,6 +111,36 @@ TOOLS = [
         },
     ),
     types.Tool(
+        name="get_league_teams",
+        description="List all teams in a league (team_key, name, manager). Needed for league-wide analysis.",
+        inputSchema={
+            "type": "object",
+            "properties": {"league_key": {"type": "string"}},
+            "required": ["league_key"],
+        },
+    ),
+    types.Tool(
+        name="get_league_settings",
+        description="Get scoring categories with sort_order (1=high-wins, 0=low-wins, e.g. ERA/WHIP). Use for Roto/H2H category analysis.",
+        inputSchema={
+            "type": "object",
+            "properties": {"league_key": {"type": "string"}},
+            "required": ["league_key"],
+        },
+    ),
+    types.Tool(
+        name="get_league_scoreboard",
+        description="Get all matchups in a given week with per-team category stats. Omit week for current week. Stats are dual-indexed by raw stat_id and label (e.g. stats['7']==stats['HR']).",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "league_key": {"type": "string"},
+                "week": {"type": "integer", "description": "Week number. Defaults to current week."},
+            },
+            "required": ["league_key"],
+        },
+    ),
+    types.Tool(
         name="search_players",
         description="Search for any player by name across the league. Use this to find a player's key before calling get_player_stats.",
         inputSchema={
@@ -177,6 +218,21 @@ def _dispatch(name: str, args: dict) -> list[types.TextContent]:
         else:
             data = yahoo.get(f"/player/{args['player_key']}/stats;type={period}")
         return _text(json.dumps(parse_player_stats(data), indent=2))
+
+    if name == "get_league_teams":
+        data = yahoo.get(f"/league/{args['league_key']}/teams")
+        return _text(json.dumps(parse_league_teams(data), indent=2))
+
+    if name == "get_league_settings":
+        data = yahoo.get(f"/league/{args['league_key']}/settings")
+        return _text(json.dumps(parse_league_settings(data), indent=2))
+
+    if name == "get_league_scoreboard":
+        path = f"/league/{args['league_key']}/scoreboard"
+        if (wk := args.get("week")) is not None:
+            path += f";week={wk}"
+        data = yahoo.get(path)
+        return _text(json.dumps(parse_league_scoreboard(data), indent=2))
 
     if name == "search_players":
         data = yahoo.get(f"/league/{args['league_key']}/players;search={args['name']}")

@@ -122,6 +122,39 @@ def _stat_map_for(info: dict, player_stats: dict | None = None) -> dict:
     return NBA_STAT_NAMES if _is_nba_player(info, player_stats) else MLB_STAT_NAMES
 
 
+def _stat_map_for_ids(stat_ids) -> dict:
+    """Pick MLB vs NBA map from a set of stat_ids (team-level, no player info).
+    NBA stat_ids top out at 20; any id > 20 is an MLB category (IP/ERA/WHIP/QS/etc)."""
+    for sid in stat_ids:
+        s = str(sid)
+        if s.isdigit() and int(s) > 20:
+            return MLB_STAT_NAMES
+    return NBA_STAT_NAMES
+
+
+def _parse_team_category_stats(team_stats: dict) -> dict:
+    """Flatten team_stats block into dual-indexed dict: both raw stat_id and human label point to the same value.
+    e.g. {"7": "5", "HR": "5", "34": "3.21", "ERA": "3.21"}
+    """
+    raw = team_stats.get("stats", []) if isinstance(team_stats, dict) else []
+    ids = [str(s["stat"]["stat_id"]) for s in raw if isinstance(s, dict) and "stat" in s]
+    stat_map = _stat_map_for_ids(ids)
+
+    out = {}
+    for s in raw:
+        if not isinstance(s, dict) or "stat" not in s:
+            continue
+        sid = str(s["stat"]["stat_id"])
+        val = s["stat"].get("value")
+        if val in ("-", False, None, ""):
+            continue
+        out[sid] = val
+        label = stat_map.get(sid)
+        if label:
+            out[label] = val
+    return out
+
+
 def _parse_stats_block(player_stats: dict, stat_map: dict) -> dict:
     """Extract named stats from a player_stats block."""
     named_stats = {}
@@ -293,6 +326,7 @@ def parse_matchup(data: dict) -> dict:
             "name": t_info.get("name"),
             "points": t_stats.get("team_points", {}).get("total"),
             "projected_points": t_stats.get("team_projected_points", {}).get("total"),
+            "stats": _parse_team_category_stats(t_stats.get("team_stats", {})),
         })
 
     stat_winners = []
@@ -313,4 +347,128 @@ def parse_matchup(data: dict) -> dict:
         "is_playoffs": current.get("is_playoffs"),
         "teams": teams,
         "stat_winners": stat_winners,
+    }
+
+
+def _parse_stat_winners(raw: list) -> list[dict]:
+    out = []
+    for sw in raw or []:
+        if isinstance(sw, dict) and "stat_winner" in sw:
+            s = sw["stat_winner"]
+            out.append({
+                "stat_id": s.get("stat_id"),
+                "winner_team_key": s.get("winner_team_key"),
+                "is_tied": s.get("is_tied"),
+            })
+    return out
+
+
+def _team_brief(t_parts: list) -> dict:
+    """Extract team_key, name, manager from a team node."""
+    info = _extract_info(t_parts[0]) if t_parts else {}
+    managers = info.get("managers", [])
+    nicks = []
+    for m in managers:
+        if isinstance(m, dict) and "manager" in m:
+            nick = m["manager"].get("nickname")
+            if nick:
+                nicks.append(nick)
+    return {
+        "team_key": info.get("team_key"),
+        "name": info.get("name"),
+        "manager": ", ".join(nicks) if nicks else None,
+    }
+
+
+def parse_league_teams(data: dict) -> list[dict]:
+    """Parse /league/{key}/teams — all teams in the league."""
+    league_data = data.get("fantasy_content", {}).get("league", [{}, {}])
+    teams_root = league_data[1].get("teams", {}) if len(league_data) > 1 else {}
+
+    teams = []
+    for i in range(teams_root.get("count", 0)):
+        t_parts = teams_root.get(str(i), {}).get("team", [[]])
+        teams.append(_team_brief(t_parts))
+    return teams
+
+
+def parse_league_settings(data: dict) -> dict:
+    """Parse /league/{key}/settings — returns scoring categories with sort_order."""
+    league_data = data.get("fantasy_content", {}).get("league", [{}, {}])
+    league_info = league_data[0] if league_data else {}
+    settings_list = league_data[1].get("settings", [{}]) if len(league_data) > 1 else [{}]
+    settings = settings_list[0] if settings_list else {}
+
+    stat_categories_root = settings.get("stat_categories", {}).get("stats", [])
+    stat_ids = []
+    raw_cats = []
+    for s in stat_categories_root:
+        if not isinstance(s, dict) or "stat" not in s:
+            continue
+        stat = s["stat"]
+        sid = str(stat.get("stat_id"))
+        stat_ids.append(sid)
+        raw_cats.append(stat)
+
+    stat_map = _stat_map_for_ids(stat_ids)
+    categories = []
+    for stat in raw_cats:
+        sid = str(stat.get("stat_id"))
+        # skip display-only / non-scoring stats when possible
+        if stat.get("is_only_display_stat") in (1, "1"):
+            continue
+        categories.append({
+            "stat_id": sid,
+            "label": stat_map.get(sid) or stat.get("display_name") or stat.get("name"),
+            "sort_order": stat.get("sort_order"),
+            "position_type": stat.get("position_type"),
+        })
+
+    return {
+        "league_key": league_info.get("league_key"),
+        "league_name": league_info.get("name"),
+        "scoring_type": league_info.get("scoring_type"),
+        "num_teams": league_info.get("num_teams"),
+        "current_week": league_info.get("current_week"),
+        "stat_categories": categories,
+    }
+
+
+def parse_league_scoreboard(data: dict) -> dict:
+    """Parse /league/{key}/scoreboard — all matchups with category stats per team."""
+    league_data = data.get("fantasy_content", {}).get("league", [{}, {}])
+    league_info = league_data[0] if league_data else {}
+    scoreboard = league_data[1].get("scoreboard", {}) if len(league_data) > 1 else {}
+    matchups_root = scoreboard.get("0", {}).get("matchups", {})
+
+    matchups = []
+    for i in range(matchups_root.get("count", 0)):
+        m = matchups_root.get(str(i), {}).get("matchup", {})
+        teams_root = m.get("0", {}).get("teams", {})
+
+        teams = []
+        for j in range(teams_root.get("count", 0)):
+            t_parts = teams_root.get(str(j), {}).get("team", [[], {}])
+            t_info = _extract_info(t_parts[0]) if t_parts else {}
+            t_stats = t_parts[1] if len(t_parts) > 1 else {}
+            teams.append({
+                "team_key": t_info.get("team_key"),
+                "name": t_info.get("name"),
+                "points": t_stats.get("team_points", {}).get("total"),
+                "stats": _parse_team_category_stats(t_stats.get("team_stats", {})),
+            })
+
+        matchups.append({
+            "status": m.get("status"),
+            "is_playoffs": m.get("is_playoffs"),
+            "is_tied": m.get("is_tied"),
+            "winner_team_key": m.get("winner_team_key"),
+            "teams": teams,
+            "stat_winners": _parse_stat_winners(m.get("stat_winners", [])),
+        })
+
+    return {
+        "league_key": league_info.get("league_key"),
+        "week": scoreboard.get("week") or league_info.get("current_week"),
+        "matchups": matchups,
     }
