@@ -211,7 +211,12 @@ def parse_roster_stats(data: dict) -> list[dict]:
 
 
 def parse_free_agents(data: dict, include_stats: bool = False) -> list[dict]:
-    """Parse /league/{key}/players;status=FA"""
+    """Parse /league/{key}/players;status=FA
+
+    Hitters carry an extra {starting_status, batting_order} block before stats,
+    so player_stats lives at player_parts[2] for hitters vs [1] for pitchers.
+    Iterate all trailing parts to find it regardless of position.
+    """
     league_data = data.get("fantasy_content", {}).get("league", [{}, {}])
     players_data = league_data[1].get("players", {}) if len(league_data) > 1 else {}
 
@@ -220,19 +225,29 @@ def parse_free_agents(data: dict, include_stats: bool = False) -> list[dict]:
         player_parts = players_data.get(str(i), {}).get("player", [[], {}])
         info = _extract_info(player_parts[0]) if player_parts else {}
 
-        player_key = info.get("player_key", "")
+        player_stats = {}
+        percent_owned = 0.0
+        percent_owned_delta = None
+        for part in player_parts[1:]:
+            if not isinstance(part, dict):
+                continue
+            if "player_stats" in part:
+                player_stats = part["player_stats"]
+            if "percent_owned" in part:
+                percent_owned, percent_owned_delta = _extract_percent_owned(part["percent_owned"])
+
         entry = {
             "name": info.get("name", {}).get("full", "Unknown"),
-            "player_key": player_key,
+            "player_key": info.get("player_key", ""),
             "positions": [p.get("position") for p in info.get("eligible_positions", []) if isinstance(p, dict)],
             "status": info.get("status", "Active"),
             "injury_note": info.get("injury_note", ""),
             "team": info.get("editorial_team_abbr", ""),
-            "percent_owned": _safe_percent_owned(info),
+            "percent_owned": percent_owned,
+            "percent_owned_delta": percent_owned_delta,
         }
 
-        if include_stats and len(player_parts) > 1 and isinstance(player_parts[1], dict):
-            player_stats = player_parts[1].get("player_stats", {})
+        if include_stats and player_stats:
             entry["coverage_type"] = player_stats.get("0", {}).get("coverage_type")
             entry["stats"] = _parse_stats_block(player_stats, _stat_map_for(info, player_stats))
 
@@ -240,9 +255,21 @@ def parse_free_agents(data: dict, include_stats: bool = False) -> list[dict]:
     return players
 
 
-def _safe_percent_owned(info: dict) -> float:
-    po = info.get("percent_owned", {})
-    return float(po.get("value", 0)) if isinstance(po, dict) else 0.0
+def _extract_percent_owned(raw) -> tuple[float, float | None]:
+    """percent_owned comes as [{coverage_type,...}, {value: N}, {delta: "N"}]."""
+    value = 0.0
+    delta = None
+    if isinstance(raw, list):
+        for item in raw:
+            if not isinstance(item, dict):
+                continue
+            if "value" in item:
+                try: value = float(item["value"])
+                except (TypeError, ValueError): pass
+            if "delta" in item:
+                try: delta = float(item["delta"])
+                except (TypeError, ValueError): pass
+    return value, delta
 
 
 MLB_STAT_NAMES = {

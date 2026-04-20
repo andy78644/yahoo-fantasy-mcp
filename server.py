@@ -195,8 +195,11 @@ def _dispatch(name: str, args: dict) -> list[types.TextContent]:
         path = f"/league/{args['league_key']}/players;status=FA;sort=AR;count={args.get('count', 25)}"
         if pos := args.get("position"):
             path += f";position={pos}"
+        # Yahoo does not return percent_owned unless explicitly requested via out=.
+        out_parts = ["percent_owned"]
         if args.get("include_stats"):
-            path += ";out=stats"
+            out_parts.append("stats")
+        path += f";out={','.join(out_parts)}"
         data = yahoo.get(path)
         return _text(json.dumps(parse_free_agents(data, include_stats=args.get("include_stats", False)), indent=2))
 
