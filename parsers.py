@@ -146,7 +146,7 @@ def _parse_team_category_stats(team_stats: dict) -> dict:
             continue
         sid = str(s["stat"]["stat_id"])
         val = s["stat"].get("value")
-        if val in ("-", False, None, ""):
+        if val in ("-", None, "") or val is False:
             continue
         out[sid] = val
         label = stat_map.get(sid)
@@ -246,23 +246,45 @@ def _safe_percent_owned(info: dict) -> float:
 
 
 MLB_STAT_NAMES = {
-    # Hitter counting stats
-    "0": "GP", "1": "G", "2": "SO",
-    "6": "AB", "7": "R", "8": "H", "9": "1B", "10": "2B", "11": "3B",
-    "12": "IBB", "13": "HBP", "14": "SAC", "15": "SF", "16": "GIDP",
-    "17": "HR", "18": "BB", "20": "SB", "23": "XBH", "65": "PA",
-    # Hitter rate stats
-    "3": "AVG", "4": "OBP", "5": "SLG", "55": "OPS", "60": "H/AB",
-    # Pitcher counting stats
-    "28": "GS", "29": "W", "30": "L", "31": "SV",
-    "32": "HLD", "33": "BS", "34": "HA", "36": "K", "37": "BB_P",
-    "38": "QS", "39": "OUT", "40": "CG", "41": "HRA", "42": "BBA", "43": "ER",
-    "83": "QS",
-    "44": "NSV", "45": "K/9", "46": "BB/9", "48": "K/BB",
-    "51": "G_P", "56": "SVHD", "57": "Ks_swinging", "58": "GB%", "59": "FIP",
-    # Pitcher rate stats
-    "26": "ERA", "27": "WHIP", "50": "IP",
-    "61": "BAA", "62": "SV+HLD",
+    # Source of truth: /game/469/stat_categories (2026 MLB game key).
+    # Where hitter + pitcher share a Yahoo display_name, the pitcher version gets
+    # a suffix (HA/RA/HRA/BBA/etc.) so team-level matchup stats don't collide.
+
+    # Batting — counting
+    "0": "GP", "6": "AB", "7": "R", "8": "H",
+    "9": "1B", "10": "2B", "11": "3B", "12": "HR",
+    "13": "RBI", "14": "SH", "15": "SF", "16": "SB",
+    "17": "CS", "18": "BB", "19": "IBB", "20": "HBP",
+    "21": "SO", "22": "GIDP", "23": "TB", "61": "XBH",
+    "62": "NSB", "64": "CYC", "65": "PA", "66": "SLAM",
+    # Batting — rate
+    "3": "AVG", "4": "OBP", "5": "SLG", "55": "OPS",
+    "60": "H/AB", "63": "SB%",
+
+    # Pitching — counting
+    "1": "GP_P", "2": "GS", "24": "APP", "25": "GS",
+    "28": "W", "29": "L", "30": "CG", "31": "SHO",
+    "32": "SV", "33": "OUT", "35": "TBF", "37": "ER",
+    "42": "K", "43": "WP", "44": "BLK", "47": "SVOP",
+    "48": "HLD", "50": "IP", "67": "PC", "70": "RW",
+    "71": "RL", "72": "PICK", "73": "RAPP", "79": "NH",
+    "80": "PG", "83": "QS", "84": "BSV", "85": "NSV",
+    "89": "SV+H", "90": "NSVH", "91": "NW",
+    # Pitching — "allowed" / inverse batter stats
+    "34": "HA", "36": "RA", "38": "HRA", "39": "BB_P",
+    "40": "IBB_P", "41": "HBP_P", "45": "SBA", "46": "GIDP_P",
+    "49": "TBA", "68": "2BA", "69": "3BA", "76": "1BA",
+    "82": "IRA",
+    # Pitching — rate
+    "26": "ERA", "27": "WHIP", "56": "K/BB", "57": "K/9",
+    "74": "OBPA", "75": "WIN%", "77": "H/9", "78": "BB/9",
+    "81": "SV%",
+
+    # Fielding
+    "51": "PO", "52": "A", "53": "E", "54": "FPCT",
+    "86": "OFA", "87": "DPT", "88": "CI",
+    # Meta
+    "58": "TEAM", "59": "LEAGUE",
 }
 
 NBA_STAT_NAMES = {
