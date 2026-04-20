@@ -252,11 +252,12 @@ MLB_STAT_NAMES = {
     "12": "IBB", "13": "HBP", "14": "SAC", "15": "SF", "16": "GIDP",
     "17": "HR", "18": "BB", "20": "SB", "23": "XBH", "65": "PA",
     # Hitter rate stats
-    "3": "AVG", "4": "OBP", "5": "SLG", "55": "OPS", "60": "OAV",
+    "3": "AVG", "4": "OBP", "5": "SLG", "55": "OPS", "60": "H/AB",
     # Pitcher counting stats
     "28": "GS", "29": "W", "30": "L", "31": "SV",
     "32": "HLD", "33": "BS", "34": "HA", "36": "K", "37": "BB_P",
     "38": "QS", "39": "OUT", "40": "CG", "41": "HRA", "42": "BBA", "43": "ER",
+    "83": "QS",
     "44": "NSV", "45": "K/9", "46": "BB/9", "48": "K/BB",
     "51": "G_P", "56": "SVHD", "57": "Ks_swinging", "58": "GB%", "59": "FIP",
     # Pitcher rate stats
